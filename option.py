@@ -13,10 +13,10 @@ parser.add_argument('--n_GPUs', type=int, default=1, help='number of GPUs')
 parser.add_argument('--seed', type=int, default=1, help='random seed')
 
 # Data specifications
-parser.add_argument('--dir_data', type=str, default='../../data', help='dataset directory')
+parser.add_argument('--dir_data', type=str, default='./dataset', help='dataset directory')
 parser.add_argument('--dir_demo', type=str, default='../test', help='demo image directory')
 parser.add_argument('--data_train', type=str, default='DIV2K', help='train dataset name')
-parser.add_argument('--data_test', type=str, default='CBSD68', help='test dataset name')
+parser.add_argument('--data_test', type=str, default='MyImage', help='test dataset name')
 parser.add_argument('--benchmark_noise', action='store_true', help='use noisy benchmark sets')
 parser.add_argument('--n_train', type=int, default=1989, help='number of training set')
 parser.add_argument('--n_val', type=int, default=105, help='number of validation set')
@@ -81,8 +81,8 @@ parser.add_argument('--print_every', type=int, default=100, help='how many batch
 parser.add_argument('--save_results', action='store_true', help='save output results')
 
 # Options for test
-parser.add_argument('--testpath', type=str, default='../../data', help='dataset directory for testing')
-parser.add_argument('--testset', type=str, default='Set5', help='dataset name for testing')
+parser.add_argument('--testpath', type=str, default='./dataset', help='dataset directory for testing')
+parser.add_argument('--testset', type=str, default='MyImage', help='dataset name for testing')
 
 parser.add_argument('--device', type=str, default='cuda:0',
                     help='device to use for training / testing')

@@ -12,7 +12,7 @@ from trainer import Trainer
 torch.manual_seed(args.seed)
 
 # Initialize the checkpoint utility
-checkpoint = utility.Checkpoint(args)  # 修改此处，使用大写的 Checkpoint
+checkpoint = utility.Checkpoint(args)
 
 if checkpoint.ok:
     # Load the dataset

@@ -1,8 +1,10 @@
+import os
 import sys
 import threading
 import queue
 import random
 
+import imageio
 import torch
 import torch.multiprocessing as multiprocessing
 from torch.utils.data import DataLoader, Dataset, default_collate
@@ -10,6 +12,8 @@ from torch.utils.data._utils import collate, signal_handling, ExceptionWrapper
 from torch.utils.data._utils.worker import _worker_loop
 from torch.utils.data._utils.pin_memory import _pin_memory_loop
 from torch.utils.data.dataloader import _BaseDataLoaderIter, _SingleProcessDataLoaderIter, _MultiProcessingDataLoaderIter
+
+from TestCode.code import data
 
 def _ms_loop(dataset, index_queue, data_queue, collate_fn, scale, seed, init_fn, worker_id):
     signal_handling._set_worker_signal_handlers()
@@ -136,3 +140,30 @@ class MSDataLoader(DataLoader):
             return _SingleProcessDataLoaderIter(self)
         else:
             return _MSDataLoaderIter(self)
+        
+class DocumentDenoisingDataset(data.Dataset):
+    def __init__(self, root, transform=None):
+        self.noisy_dir = os.path.join(root, 'noisy')
+        self.clean_dir = os.path.join(root, 'clean')
+        self.noisy_images = sorted(os.listdir(self.noisy_dir))
+        self.clean_images = sorted(os.listdir(self.clean_dir))
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.noisy_images)
+
+    def __getitem__(self, idx):
+        noisy_path = os.path.join(self.noisy_dir, self.noisy_images[idx])
+        clean_path = os.path.join(self.clean_dir, self.clean_images[idx])
+
+        noisy_image = imageio.imread(noisy_path)
+        clean_image = imageio.imread(clean_path)
+
+        if self.transform:
+            noisy_image = self.transform(noisy_image)
+            clean_image = self.transform(clean_image)
+
+        noisy_image = torch.tensor(noisy_image).float().unsqueeze(0)
+        clean_image = torch.tensor(clean_image).float().unsqueeze(0)
+
+        return noisy_image, clean_image, self.noisy_images[idx]
