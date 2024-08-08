@@ -87,6 +87,9 @@ parser.add_argument('--testset', type=str, default='MyImage', help='dataset name
 parser.add_argument('--device', type=str, default='cuda:0',
                     help='device to use for training / testing')
 
+parser.add_argument('--device_id', type=str, default='cuda:0', help='device to use for training / testing')
+
+
 args = parser.parse_args()
 template.set_template(args)
 

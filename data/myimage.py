@@ -15,48 +15,37 @@ class MyImage(data.Dataset):
         self.train = train
         self.benchmark = False
 
-        self.clean_dir = os.path.abspath(os.path.join(args.testpath, 'clean'))
-        self.noisy_dir = os.path.abspath(os.path.join(args.testpath, 'noisy'))
+        self.image_dir = os.path.abspath(args.testpath)
+        if not os.path.exists(self.image_dir):
+            raise FileNotFoundError(f'Image directory not found: {self.image_dir}')
 
-        if not os.path.exists(self.clean_dir):
-            raise FileNotFoundError(f'Clean directory not found: {self.clean_dir}')
-        if not os.path.exists(self.noisy_dir):
-            raise FileNotFoundError(f'Noisy directory not found: {self.noisy_dir}')
+        self.image_files = sorted([os.path.join(self.image_dir, f) for f in os.listdir(self.image_dir) if f.lower().endswith(('.bmp', '.png', '.jpg', '.jpeg', '.tif', '.tiff'))])
 
-        self.clean_files = sorted([os.path.join(self.clean_dir, f) for f in os.listdir(self.clean_dir) if f.lower().endswith('.bmp')])
-        self.noisy_files = sorted([os.path.join(self.noisy_dir, f) for f in os.listdir(self.noisy_dir) if f.lower().endswith('.bmp')])
+        print(f"Found {len(self.image_files)} image files in {self.image_dir}")
 
     def __getitem__(self, idx):
-        filename = os.path.split(self.noisy_files[idx])[-1]
+        filename = os.path.split(self.image_files[idx])[-1]
         filename, _ = os.path.splitext(filename)
 
-        noisy = imageio.imread(self.noisy_files[idx])
-        clean = imageio.imread(self.clean_files[idx])
+        image = imageio.imread(self.image_files[idx])
 
         # Convert 4-channel image to 3-channel if necessary
-        if noisy.shape[-1] == 4:
-            noisy = noisy[:, :, :3]
-        if clean.shape[-1] == 4:
-            clean = clean[:, :, :3]
+        if image.shape[-1] == 4:
+            image = image[:, :, :3]
 
         # Resize images while maintaining the aspect ratio if they are too large
         max_dim = 512
-        if max(noisy.shape[:2]) > max_dim:
-            ratio = max_dim / max(noisy.shape[:2])
-            noisy = resize(noisy, (int(noisy.shape[0] * ratio), int(noisy.shape[1] * ratio)), preserve_range=True, anti_aliasing=True).astype(noisy.dtype)
-        if max(clean.shape[:2]) > max_dim:
-            ratio = max_dim / max(clean.shape[:2])
-            clean = resize(clean, (int(clean.shape[0] * ratio), int(clean.shape[1] * ratio)), preserve_range=True, anti_aliasing=True).astype(clean.dtype)
+        if max(image.shape[:2]) > max_dim:
+            ratio = max_dim / max(image.shape[:2])
+            image = resize(image, (int(image.shape[0] * ratio), int(image.shape[1] * ratio)), preserve_range=True, anti_aliasing=True).astype(image.dtype)
 
-        noisy = common.set_channel([noisy], self.args.n_colors)[0]
-        clean = common.set_channel([clean], self.args.n_colors)[0]
+        image = common.set_channel([image], self.args.n_colors)[0]
+        image_tensor = common.np2Tensor([image], self.args.rgb_range)[0]
 
-        noisy, clean = common.np2Tensor([noisy, clean], self.args.rgb_range)
-
-        return noisy, clean, filename
+        return image_tensor, -1, filename
 
     def __len__(self):
-        return len(self.noisy_files)
+        return len(self.image_files)
 
     def set_scale(self, idx_scale):
         self.idx_scale = idx_scale
