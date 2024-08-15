@@ -1,3 +1,4 @@
+
 import random
 import numpy as np
 import imageio
@@ -32,31 +33,42 @@ def set_channel(l, n_channel):
 
     return [_set_channel(_l) for _l in l]
 
+def _np2Tensor(img, rgb_range):
+    # 将 PIL.Image 对象转换为 numpy 数组
+    if isinstance(img, torch.Tensor):
+        np_transpose = img.numpy().transpose((2, 0, 1))
+    else:
+        np_transpose = np.array(img).transpose((2, 0, 1))
+
+    tensor = torch.from_numpy(np_transpose).float()
+    tensor.mul_(rgb_range / 255)
+    return tensor
+
 def np2Tensor(l, rgb_range):
-    def _np2Tensor(img):
-        np_transpose = np.ascontiguousarray(img.transpose((2, 0, 1)))
-        tensor = torch.from_numpy(np_transpose).float()
-        tensor.mul_(rgb_range / 255)
-        return tensor
+    return [_np2Tensor(_l, rgb_range) for _l in l]
 
-    return [_np2Tensor(_l) for _l in l]
-
-def add_noise(x, noise='.'):
-    if noise != '.':
-        noise_type = noise[0]
-        noise_value = int(noise[1:])
-        if noise_type == 'G':
-            noises = np.random.normal(scale=noise_value, size=x.shape)
-            noises = noises.round()
-        elif noise_type == 'S':
-            noises = np.random.poisson(x * noise_value) / noise_value
-            noises = noises - noises.mean(axis=0).mean(axis=0)
-
-        x_noise = x.astype(np.int16) + noises.astype(np.int16)
-        x_noise = x_noise.clip(0, 255).astype(np.uint8)
-        return x_noise
+def add_noise(x, noise_type='G', noise_value=25):
+    if noise_type == 'G':  # 高斯噪声
+        noises = np.random.normal(scale=noise_value, size=x.shape)
+        noises = noises.round()
+    elif noise_type == 'S':  # 泊松噪声
+        noises = np.random.poisson(x * noise_value) / noise_value
+        noises = noises - noises.mean(axis=0).mean(axis=0)
+    elif noise_type == 'SP':  # 盐和胡椒噪声
+        prob = noise_value / 255.0
+        noise = np.random.rand(*x.shape)
+        x[noise < prob / 2] = 0
+        x[noise > 1 - prob / 2] = 255
+        noises = np.zeros_like(x)
+    elif noise_type == 'speckle':  # 斑点噪声
+        noises = np.random.randn(*x.shape) * noise_value
+        noises = noises.round()
     else:
         return x
+
+    x_noise = x.astype(np.int16) + noises.astype(np.int16)
+    x_noise = x_noise.clip(0, 255).astype(np.uint8)
+    return x_noise
 
 def augment(l, hflip=True, rot=True):
     hflip = hflip and random.random() < 0.5
@@ -70,3 +82,12 @@ def augment(l, hflip=True, rot=True):
         return img
 
     return [_augment(_l) for _l in l]
+
+def add_augmentation(image):
+    # 添加随机噪声
+    noise_types = ['G', 'S', 'SP', 'speckle']
+    noise_type = random.choice(noise_types)
+    noise_value = random.randint(10, 50)
+    image = add_noise(image, noise_type=noise_type, noise_value=noise_value)
+    
+    return image

@@ -13,13 +13,15 @@ class Trainer():
         self.model = my_model
         self.loss = my_loss
         self.optimizer = utility.make_optimizer(args, self.model)
-        self.scheduler = utility.make_scheduler(args, self.optimizer)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=50)
+        self.noise_level = args.initial_noise_level  # 初始化噪声水平
 
         if self.args.load != '.':
             self.optimizer.load_state_dict(
                 torch.load(os.path.join(ckp.dir, 'optimizer.pt'), map_location='cpu')
             )
-            for _ in range(len(ckp.log)): self.scheduler.step()
+            for _ in range(len(ckp.log)):
+                self.scheduler.step()
 
         self.error_last = 1e8
 
@@ -29,38 +31,35 @@ class Trainer():
         epoch = self.scheduler.last_epoch + 1
         lr = self.scheduler.get_last_lr()[0]
 
-        self.ckp.write_log(
-            '[Epoch {}]\tLearning rate: {:.2e}'.format(epoch, lr)
-        )
+        # 动态调整噪声水平
+        self.noise_level = min(self.args.max_noise_level, self.noise_level + self.args.noise_increment_per_epoch)
+        self.ckp.write_log(f'[Epoch {epoch}]\tLearning rate: {lr:.2e}\tNoise Level: {self.noise_level}')
+
         self.loss.start_log()
         self.model.train()
 
         timer_data, timer_model = utility.Timer(), utility.Timer()
-        for batch, (lr, hr, _, idx_scale) in enumerate(self.loader_train):
+        for batch, (lr, hr, _) in enumerate(self.loader_train):
             lr, hr = self.prepare([lr, hr])
             timer_data.hold()
             timer_model.tic()
 
             self.optimizer.zero_grad()
-            sr = self.model(lr, idx_scale)
+            sr = self.model(lr, idx_scale=0)
             loss = self.loss(sr, hr)
             if loss.item() < self.args.skip_threshold * self.error_last:
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 self.optimizer.step()
             else:
-                print('Skip this batch {}! (Loss: {})'.format(
-                    batch + 1, loss.item()
-                ))
+                print(f'Skip this batch {batch + 1}! (Loss: {loss.item()})')
 
             timer_model.hold()
 
             if (batch + 1) % self.args.print_every == 0:
-                self.ckp.write_log('[{}/{}]\t{}\t{:.1f}+{:.1f}s'.format(
-                    (batch + 1) * self.args.batch_size,
-                    len(self.loader_train.dataset),
-                    self.loss.display_loss(batch),
-                    timer_model.release(),
-                    timer_data.release()))
+                self.ckp.write_log(f'[{(batch + 1) * self.args.batch_size}/{len(self.loader_train.dataset)}]\t'
+                                   f'{self.loss.display_loss(batch)}\t'
+                                   f'{timer_model.release():.1f}+{timer_data.release():.1f}s')
 
             timer_data.tic()
 
@@ -77,24 +76,37 @@ class Trainer():
         with torch.no_grad():
             for idx_scale, scale in enumerate(self.noise_g):
                 eval_acc = 0
-                self.loader_test.dataset.set_scale(idx_scale)
                 tqdm_test = tqdm(self.loader_test, ncols=80)
-                for idx_img, (lr, hr, filename) in enumerate(tqdm_test):
+                for idx_img, (lr, hr, filename, original_size) in enumerate(tqdm_test):  # 加入original_size
                     filename = filename[0]
                     lr, hr = self.prepare([lr, hr])
 
-                    sr = self.model(lr, idx_scale)
+                    # 模型预测
+                    sr = self.model(lr, idx_scale=0)
                     sr = utility.quantize(sr, self.args.rgb_range)
+
+                    # 应用细节增强
+                    sr = utility.enhance_image(sr)
+
+                    # 恢复到原始大小，确保 sr 是四维张量 (N, C, H, W)
+                    if sr.dim() == 3:  # 如果是三维张量，添加批次维度
+                        sr = sr.unsqueeze(0)
+
+                    # 恢复尺寸
+                    sr = torch.nn.functional.interpolate(sr, size=original_size[::-1], mode='bilinear', align_corners=False)  # 恢复到原始尺寸
+
+                    # 如果需要，可以再次删除批次维度
+                    if sr.size(0) == 1:
+                        sr = sr.squeeze(0)
 
                     save_list = [sr]
                     eval_acc += utility.calc_psnr(
-                        sr, hr, scale, self.args.rgb_range,
-                        benchmark=self.loader_test.dataset.benchmark
+                        sr, hr, scale, self.args.rgb_range
                     )
                     save_list.extend([lr, hr])
 
                     if self.args.save_results:
-                        self.ckp.save_results(filename, save_list, scale)
+                        self.ckp.save_results(filename, save_list, scale, original_size)
 
                     torch.cuda.empty_cache()
 

@@ -1,51 +1,58 @@
+from PIL import Image
 import os
 from data import common
-import numpy as np
 import torch
 import torch.utils.data as data
-import imageio
-from skimage.transform import resize
+from torchvision import transforms
 
 class MyImage(data.Dataset):
-    def __init__(self, args, train=False):
+    def __init__(self, args, train=True, start_noise_level=10, noise_increment=5):
         self.args = args
-        self.name = 'MyImage'
-        self.scale = args.noise_g
-        self.idx_scale = 0
         self.train = train
-        self.benchmark = False
+        self.current_noise_level = start_noise_level
+        self.noise_increment = noise_increment
+        
+        if train:
+            self.clean_dir = os.path.abspath(os.path.join(args.dir_data, 'train_cleaned'))
+            self.noisy_dir = os.path.abspath(os.path.join(args.dir_data, 'train'))
+        else:
+            self.clean_dir = os.path.abspath(os.path.join(args.testpath, 'clean'))
+            self.noisy_dir = os.path.abspath(os.path.join(args.testpath, 'noisy'))
 
-        self.image_dir = os.path.abspath(args.testpath)
-        if not os.path.exists(self.image_dir):
-            raise FileNotFoundError(f'Image directory not found: {self.image_dir}')
+        self.clean_images = sorted(os.listdir(self.clean_dir))
+        self.noisy_images = sorted(os.listdir(self.noisy_dir))
 
-        self.image_files = sorted([os.path.join(self.image_dir, f) for f in os.listdir(self.image_dir) if f.lower().endswith(('.bmp', '.png', '.jpg', '.jpeg', '.tif', '.tiff'))])
+        assert len(self.clean_images) == len(self.noisy_images), "清晰图像和带噪声图像数量不匹配"
 
-        print(f"Found {len(self.image_files)} image files in {self.image_dir}")
+        # 这里移除了Resize操作
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+        ])
 
     def __getitem__(self, idx):
-        filename = os.path.split(self.image_files[idx])[-1]
-        filename, _ = os.path.splitext(filename)
+        noisy_image_path = os.path.join(self.noisy_dir, self.noisy_images[idx])
+        clean_image_path = os.path.join(self.clean_dir, self.clean_images[idx])
 
-        image = imageio.imread(self.image_files[idx])
+        noisy_image = Image.open(noisy_image_path).convert('RGB')
+        clean_image = Image.open(clean_image_path).convert('RGB')
 
-        # Convert 4-channel image to 3-channel if necessary
-        if image.shape[-1] == 4:
-            image = image[:, :, :3]
+        original_size = clean_image.size  # 获取图像的原始尺寸
 
-        # Resize images while maintaining the aspect ratio if they are too large
-        max_dim = 512
-        if max(image.shape[:2]) > max_dim:
-            ratio = max_dim / max(image.shape[:2])
-            image = resize(image, (int(image.shape[0] * ratio), int(image.shape[1] * ratio)), preserve_range=True, anti_aliasing=True).astype(image.dtype)
+        if self.transform:
+            noisy_image = self.transform(noisy_image)
+            clean_image = self.transform(clean_image)
 
-        image = common.set_channel([image], self.args.n_colors)[0]
-        image_tensor = common.np2Tensor([image], self.args.rgb_range)[0]
+        noisy_image = self.add_progressive_noise(noisy_image)
 
-        return image_tensor, -1, filename
+        return noisy_image, clean_image, self.noisy_images[idx], original_size  # 返回原始尺寸
 
     def __len__(self):
-        return len(self.image_files)
+        return len(self.noisy_images)
 
-    def set_scale(self, idx_scale):
-        self.idx_scale = idx_scale
+    def add_progressive_noise(self, image):
+        noise = torch.randn_like(image) * (self.current_noise_level / 255.0)
+        noisy_image = image + noise
+        return torch.clamp(noisy_image, 0, 1)
+
+    def increase_noise_level(self):
+        self.current_noise_level += self.noise_increment

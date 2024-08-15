@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+from pytorch_msssim import ssim
 
 class Loss(nn.modules.loss._Loss):
     def __init__(self, args, ckp):
@@ -21,15 +22,14 @@ class Loss(nn.modules.loss._Loss):
                 loss_function = nn.MSELoss()
             elif loss_type == 'L1':
                 loss_function = nn.L1Loss()
-            elif 'VGG' in loss_type:
-                module = import_module('loss.vgg')
-                loss_function = getattr(module, 'VGG')(loss_type[3:], rgb_range=args.rgb_range)
+            elif loss_type == 'SSIM':
+                loss_function = SSIMLoss()
             elif 'GAN' in loss_type:
                 module = import_module('loss.adversarial')
                 loss_function = getattr(module, 'Adversarial')(args, loss_type)
             else:
                 continue
-            
+
             self.loss.append({
                 'type': loss_type,
                 'weight': float(weight),
@@ -37,6 +37,14 @@ class Loss(nn.modules.loss._Loss):
             })
             if 'GAN' in loss_type:
                 self.loss.append({'type': 'DIS', 'weight': 1, 'function': None})
+
+        vgg_loss_function = import_module('loss.vgg').VGG('22', rgb_range=args.rgb_range)
+        self.loss.append({
+            'type': 'VGG',
+            'weight': 0.1,
+            'function': vgg_loss_function
+        })
+        self.loss_module.append(vgg_loss_function)
 
         if len(self.loss) > 1:
             self.loss.append({'type': 'Total', 'weight': 0, 'function': None})
@@ -46,7 +54,7 @@ class Loss(nn.modules.loss._Loss):
                 print(f"{l['weight']:.3f} * {l['type']}")
                 self.loss_module.append(l['function'])
 
-        self.log = torch.zeros((1, len(self.loss)))  # Initialize log with zeros
+        self.log = torch.zeros((1, len(self.loss)))
 
         device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
         self.loss_module.to(device)
@@ -125,3 +133,11 @@ class Loss(nn.modules.loss._Loss):
             if hasattr(l, 'scheduler'):
                 for _ in range(len(self.log)):
                     l.scheduler.step()
+
+# 定义 SSIM 损失函数
+class SSIMLoss(nn.Module):
+    def __init__(self):
+        super(SSIMLoss, self).__init__()
+
+    def forward(self, sr, hr):
+        return 1 - ssim(sr, hr, data_range=1.0, size_average=True)
