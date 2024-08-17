@@ -64,8 +64,8 @@ class Checkpoint():
         self._make_dir(self.dir + '/results')
 
         open_type = 'a' if os.path.exists(self.dir + '/log.txt') else 'w'
-        self.log_file = open(self.dir + '/log.txt', open_type)
-        with open(self.dir + '/config.txt', open_type) as f:
+        self.log_file = open(self.dir + '/log.txt', open_type, encoding='utf-8')
+        with open(self.dir + '/config.txt', open_type, encoding='utf-8') as f:
             f.write(now + '\n\n')
             for arg in vars(args):
                 f.write('{}: {}\n'.format(arg, getattr(args, arg)))
@@ -90,6 +90,12 @@ class Checkpoint():
         if refresh:
             self.log_file.close()
             self.log_file = open(self.dir + '/log.txt', 'a')
+    
+    def write_ocr_log(self, log):
+        """
+        仅记录 OCR 日志内容，不显示在终端。
+        """
+        self.log_file.write(log + '\n')
 
     def done(self):
         self.log_file.close()

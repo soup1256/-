@@ -8,6 +8,10 @@ import loss
 from option import args
 from trainer import Trainer
 from loss.custom_loss import CombinedLoss  # 添加这一行
+from skimage.metrics import structural_similarity as ssim
+from skimage.metrics import mean_squared_error as mse
+import piq  # For VIF
+
 
 # Set the random seed for reproducibility
 torch.manual_seed(args.seed)
